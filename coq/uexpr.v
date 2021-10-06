@@ -19,7 +19,7 @@ Qed.
 Inductive uexpr_type : Set :=
 | t_string
 | t_boolean
-(*| t_list*)
+| t_list
 | t_void
 | t_fn
 | t_error.
@@ -27,6 +27,7 @@ Inductive uexpr_type : Set :=
 Inductive uexpr_val : Set :=
 | v_string : string -> uexpr_val
 | v_boolean : bool -> uexpr_val
+| v_list : list uexpr_val -> uexpr_val
 | v_void : uexpr_val
 | v_fn : uexpr -> uexpr_val
 | v_error : uexpr_val.
@@ -38,6 +39,23 @@ Inductive uexpr_eval : uexpr_env -> uexpr -> uexpr_env -> uexpr_val -> Prop :=
   (n : uexpr_env)
   (s : string)
   : uexpr_eval n (e_string s) n (v_string s)
+| eval_block_empty
+  (n : uexpr_env)
+  : uexpr_eval n (e_block nil) n (v_void)
+| eval_block_single
+  (n_1 n_2 : uexpr_env)
+  (e : uexpr)
+  (v : uexpr_val)
+  (H : uexpr_eval n_1 e n_2 v)
+  : uexpr_eval n_1 (e_block (cons e nil)) n_2 v
+| eval_block_cons
+  (n_head_1 n_head_2 n_tail_2 : uexpr_env)
+  (e_head e_tail_h : uexpr)
+  (e_tail_t : list uexpr)
+  (v_head v_tail : uexpr_val)
+  (H_head : uexpr_eval n_head_1 e_head n_head_2 v_head)
+  (H_tail : uexpr_eval n_head_2 (e_block (e_tail_h :: e_tail_t)) n_tail_2 v_tail)
+  : uexpr_eval n_head_1 (e_block (e_head :: e_tail_h :: e_tail_t)) n_tail_2 v_tail
 | eval_neg_on_bool
   (n1 n2 : uexpr_env)
   (b : bool)
@@ -58,6 +76,25 @@ match fuel with
 | S f =>
 match e with
 | e_string s => Some (existT _ n1 (existT _ (v_string s) (eval_string n1 s)))
+| e_block nil => Some (existT _ n1 (existT _ (v_void) (eval_block_empty n1)))
+| e_block (e1 :: nil) =>
+    match my_eval f n1 e1 with
+    | Some (existT _ n2 (existT _ v pf)) =>
+        Some (existT _ n2 (existT _ v (eval_block_single n1 n2 e1 v pf)))
+    | _ => None
+    end
+| e_block (e_head :: e_tail_h :: e_tail_t) =>
+    match my_eval f n1 e_head with
+    | Some (existT _ n_head_2 (existT _ v_head H_head)) =>
+        match my_eval f n_head_2 (e_block (e_tail_h :: e_tail_t)) with
+        | Some (existT _ n_tail_2 (existT _ v_tail H_tail)) =>
+            Some (existT _ n_tail_2 (existT _ v_tail (
+              eval_block_cons n1 n_head_2 n_tail_2 e_head e_tail_h e_tail_t v_head v_tail H_head H_tail
+            )))
+        | _ => None
+        end
+    | _ => None
+    end
 | e_unop unop_neg e1 => match my_eval f n1 e1 with
     | Some (existT _ n2 (existT _ (v_boolean b) pf)) =>
       Some (existT _ n2 (existT _ (v_boolean (negb b)) (eval_neg_on_bool n1 n2 b e1 pf)))
@@ -77,57 +114,12 @@ end
 | O => None
 end.
 
-Definition partialOut
-  (n1 : uexpr_env)
-  (e : uexpr)
-  (x : option { n2 : uexpr_env & { v : uexpr_val & uexpr_eval n1 e n2 v } }) :=
-  match x return
-    (match x with
-     | Some (existT _ nil (existT _ (v_boolean true) pf)) => uexpr_eval n1 e nil (v_boolean true)
-     | _ => True
-     end) with
-  | Some (existT _ nil (existT _ (v_boolean true) pf)) => pf
-  | _  => I
-  end.
-
-Definition res_to_option
-  (T : Type)
-  (x : @res T) :=
-  match x with
-  | Res v => Some v
-  | Err _ => None
-  end
-.
-
-Definition extract_option
-  (T : Type)
-  (x : option T) :=
-  match x return
-    match x with
-    | Some _ => T
-    | None => True
-    end
-  with
-  | Some v => v
-  | None => I
-  end
-.
-
 Definition eval_e (fuel : nat) (e : uexpr) :=
   match my_eval fuel nil e with
   | Some (existT _ _ (existT _ v pf)) => Some v
   | _ => None
   end
 .
-
-Definition eval (fuel : nat) (s : string) :=
-  match parse s with
-  | Res e => eval_e fuel e
-  | Err _ => None
-  end
-.
-
-Compute (eval 100 "~(a=a)").
 
 Theorem eval_e_correct :
   forall
@@ -143,3 +135,13 @@ Proof.
   - destruct s. destruct s. injection H as H. rewrite <- H. exists x. assumption.
   - discriminate H.
 Qed.
+
+
+Definition eval (fuel : nat) (s : string) :=
+  match parse s with
+  | Res e => eval_e fuel e
+  | Err _ => None
+  end
+.
+
+Compute (eval 100 "{x; y; z; ~(a=a); end;}").
