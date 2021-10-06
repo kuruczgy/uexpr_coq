@@ -2,7 +2,8 @@ Require Import String.
 Open Scope string_scope.
 Require Import Coq.Lists.List.
 
-Require Import ast.
+Require Import Parser.
+Require Import parser.
 
 Definition str_map (X : Type) := list (prod string X).
 Fixpoint str_map_get (X : Type) (m : str_map X) (k : string) : option X :=
@@ -51,8 +52,6 @@ Inductive uexpr_eval : uexpr_env -> uexpr -> uexpr_env -> uexpr_val -> Prop :=
   (H2 : uexpr_eval n2 e2 n3 (v_string s2))
   : uexpr_eval n1 (e_binop binop_eq e1 e2) n3 (v_boolean (if string_dec s1 s2 then true else false)).
   
-Definition test_dep_prod : { x : Type & list x } := @existT Type _ nat nil.
-
 Fixpoint my_eval (fuel : nat) (n1 : uexpr_env) (e : uexpr)
   : option { n2 : uexpr_env & { v : uexpr_val & uexpr_eval n1 e n2 v } } :=
 match fuel with
@@ -91,9 +90,56 @@ Definition partialOut
   | _  => I
   end.
 
-Compute (my_eval 100 nil (e_unop unop_neg (e_binop binop_eq (e_string "a") (e_string "b")))).
+Definition res_to_option
+  (T : Type)
+  (x : @res T) :=
+  match x with
+  | Res v => Some v
+  | Err _ => None
+  end
+.
 
-Theorem test1 : uexpr_eval nil (e_unop unop_neg (e_binop binop_eq (e_string "a") (e_string "b"))) nil (v_boolean true).
-pose (e := (e_unop unop_neg (e_binop binop_eq (e_string "a") (e_string "b")))).
-exact (partialOut nil e (my_eval 64 nil e)).
+Definition extract_option
+  (T : Type)
+  (x : option T) :=
+  match x return
+    match x with
+    | Some _ => T
+    | None => True
+    end
+  with
+  | Some v => v
+  | None => I
+  end
+.
+
+Definition eval_e (fuel : nat) (e : uexpr) :=
+  match my_eval fuel nil e with
+  | Some (existT _ _ (existT _ v pf)) => Some v
+  | _ => None
+  end
+.
+
+Definition eval (fuel : nat) (s : string) :=
+  match parse s with
+  | Res e => eval_e fuel e
+  | Err _ => None
+  end
+.
+
+Compute (eval 100 "~(a=a)").
+
+Theorem eval_e_correct :
+  forall
+    (e : uexpr)
+    (fuel : nat)
+    (v : uexpr_val),
+    eval_e fuel e = Some v -> exists (n2 : uexpr_env), uexpr_eval nil e n2 v
+.
+Proof.
+  intros.
+  unfold eval_e in H.
+  destruct (my_eval fuel nil e).
+  - destruct s. destruct s. injection H as H. rewrite <- H. exists x. assumption.
+  - discriminate H.
 Qed.

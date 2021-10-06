@@ -3,14 +3,13 @@ From Coq Require Import Strings.Ascii.
 From Coq Require Import Arith.EqNat.
 From Coq Require Import Lists.List.
 Require Import Nat.
+Require Import Parser.
+Import MenhirLibParser.Inter.
 Import ListNotations.
 Open Scope bool_scope.
 
-Require Import ast.
-
-Inductive token :=
-  | TokString : string -> token
-  | TokOp : ascii -> token.
+Print uexpr.
+Print STR.
 
 Inductive res {X : Type} :=
   | Res : X -> res
@@ -51,16 +50,35 @@ Fixpoint split_while (f : ascii -> bool) (s : string) : string * string :=
 
 Compute (split_while (fun c => (isOpChar c) && true) "()asd()").
 
-Fixpoint tokenize (s : string) : @res (list token) :=
+CoFixpoint TheEnd : buffer := Buf_cons (EOF tt) TheEnd.
+
+Fixpoint tokenize (s : string) : @res buffer :=
   match s with
-  | EmptyString => Res []
+  | EmptyString => Res TheEnd
   | String c s' =>
       if isWhite c then
         tokenize s'
       else if isOpChar c then
         match tokenize s' with
         | Err x => Err x
-        | Res tks => Res ((TokOp c) :: tks)
+        | Res tks =>
+            match c with
+            | "("%char => Res (Buf_cons (LPAREN tt) tks)
+            | ")"%char => Res (Buf_cons (RPAREN tt) tks)
+            | "{"%char => Res (Buf_cons (LBRACE tt) tks)
+            | "}"%char => Res (Buf_cons (RBRACE tt) tks)
+            | "["%char => Res (Buf_cons (LSQUARE tt) tks)
+            | "]"%char => Res (Buf_cons (RSQUARE tt) tks)
+            | ","%char => Res (Buf_cons (COMMA tt) tks)
+            | ";"%char => Res (Buf_cons (SEMI tt) tks)
+            | "$"%char => Res (Buf_cons (DOLLAR tt) tks)
+            | "~"%char => Res (Buf_cons (NOT tt) tks)
+            | "&"%char => Res (Buf_cons (AND tt) tks)
+            | "|"%char => Res (Buf_cons (OR tt) tks)
+            | "="%char => Res (Buf_cons (EQ tt) tks)
+            | "%"%char => Res (Buf_cons (IN tt) tks)
+            | _ => Err "bad op token"
+            end
         end
       else if Ascii.eqb c """" then
         tokenize_string s' [] true
@@ -68,7 +86,7 @@ Fixpoint tokenize (s : string) : @res (list token) :=
         let cont := fun c =>
           match tokenize s' with
           | Err x => Err x
-          | Res tks => Res ((TokString (String c EmptyString)) :: tks)
+          | Res tks => Res (Buf_cons (STR (String c EmptyString)) tks)
           end
         in
         match s' with
@@ -87,11 +105,11 @@ with tokenize_string
   (acc : list ascii)
   (quoted : bool)
   {struct s}
-  : @res (list token) :=
+  : @res buffer :=
   let cont := fun s' acc =>
     match tokenize s' with
     | Err x => Err x
-    | Res tks => Res ((TokString (string_of_list_ascii (rev acc))) :: tks)
+    | Res tks => Res (Buf_cons (STR (string_of_list_ascii (rev acc))) tks)
     end
   in
   match s with
@@ -115,21 +133,21 @@ with tokenize_string
   end
 .
 
-Fixpoint parse_expr (tks : list token) : @res uexpr :=
-  match tks with
-  | (TokString s) :: tks' => Res (e_string s)
-  | (TokOp "(") :: tks' => Err "n"
-  | _ => Err "not implemented"
+Definition parse := fun (s : string) =>
+  let r := tokenize s in
+  match r with
+  | Err x => Err x
+  | Res tks =>
+      match parse_uexpr 10 tks with
+      | Parsed_pr e _ => Res e
+      | _ => Err "parse error"
+      end
   end
 .
 
-Compute (
-  let r := tokenize "{ let($a, t); ($a=t) & print(hello) }" in
-  match r with
-  | Err x => Err x
-  | Res tks => parse_expr tks
-  end
-).
+Definition ex1 : string := "{ a; $a; ~a; a = b = c; [ a, b ]; a(x, y); a() }".
+Definition ex2 : string := "{ let($a, t); ($a=t) & print(hello) }".
+Compute (parse ex2).
 
 Require Extraction.
 Recursive Extraction tokenize.
