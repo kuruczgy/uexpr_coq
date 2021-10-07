@@ -1,20 +1,17 @@
 Require Import String.
 Open Scope string_scope.
 Require Import Coq.Lists.List.
+Import ListNotations.
 
 Require Import Parser.
 Require Import parser.
 
 Definition str_map (X : Type) := list (prod string X).
-Fixpoint str_map_get (X : Type) (m : str_map X) (k : string) : option X :=
+Fixpoint str_map_get (X : Type) (m : str_map X) (k : string) (def : X) : X :=
 match m with
-| cons h t => if string_dec (fst h) k then Some (snd h) else str_map_get X t k
-| nil => None
+| cons h t => if string_dec (fst h) k then snd h else str_map_get X t k def
+| nil => def
 end.
-
-Theorem test2 : (str_map_get nat (cons (pair "a" 1) nil) "b") = None.
-reflexivity.
-Qed.
 
 Inductive uexpr_type : Set :=
 | t_string
@@ -56,6 +53,10 @@ Inductive uexpr_eval : uexpr_env -> uexpr -> uexpr_env -> uexpr_val -> Prop :=
   (H_head : uexpr_eval n_head_1 e_head n_head_2 v_head)
   (H_tail : uexpr_eval n_head_2 (e_block (e_tail_h :: e_tail_t)) n_tail_2 v_tail)
   : uexpr_eval n_head_1 (e_block (e_head :: e_tail_h :: e_tail_t)) n_tail_2 v_tail
+| eval_var
+  (var : string)
+  (n : uexpr_env)
+  : uexpr_eval n (e_var var) n (str_map_get _ n var v_error)
 | eval_neg_on_bool
   (n1 n2 : uexpr_env)
   (b : bool)
@@ -68,7 +69,15 @@ Inductive uexpr_eval : uexpr_env -> uexpr -> uexpr_env -> uexpr_val -> Prop :=
   (e1 e2 : uexpr)
   (H1 : uexpr_eval n1 e1 n2 (v_string s1))
   (H2 : uexpr_eval n2 e2 n3 (v_string s2))
-  : uexpr_eval n1 (e_binop binop_eq e1 e2) n3 (v_boolean (if string_dec s1 s2 then true else false)).
+  : uexpr_eval n1 (e_binop binop_eq e1 e2) n3 (v_boolean (if string_dec s1 s2 then true else false))
+| eval_let
+  (n1 n2 : uexpr_env)
+  (var : string)
+  (e : uexpr)
+  (v : uexpr_val)
+  (H : uexpr_eval n1 e n2 v)
+  : uexpr_eval n1 (e_call "let" [e_var var; e]) ((var, v) :: n2) (v_void)
+.
   
 Fixpoint my_eval (fuel : nat) (n1 : uexpr_env) (e : uexpr)
   : option { n2 : uexpr_env & { v : uexpr_val & uexpr_eval n1 e n2 v } } :=
@@ -95,6 +104,10 @@ match e with
         end
     | _ => None
     end
+| e_var var =>
+    Some (existT _ n1 (existT _ (str_map_get _ n1 var v_error) (
+      eval_var var n1
+    )))
 | e_unop unop_neg e1 => match my_eval f n1 e1 with
     | Some (existT _ n2 (existT _ (v_boolean b) pf)) =>
       Some (existT _ n2 (existT _ (v_boolean (negb b)) (eval_neg_on_bool n1 n2 b e1 pf)))
@@ -109,14 +122,23 @@ match e with
     end
     | _ => None
   end
+| e_call "let" [e_var var; e1] =>
+    match my_eval f n1 e1 with
+    | Some (existT _ n2 (existT _ v H)) =>
+        Some (existT _ ((var, v) :: n2) (existT _ v_void (
+          eval_let n1 n2 var e1 v H
+        )))
+    | _ => None
+    end
 | _ => None
 end
 | O => None
-end.
+end
+.
 
 Definition eval_e (fuel : nat) (e : uexpr) :=
   match my_eval fuel nil e with
-  | Some (existT _ _ (existT _ v pf)) => Some v
+  | Some (existT _ n (existT _ v pf)) => Some (n, v)
   | _ => None
   end
 .
@@ -125,14 +147,15 @@ Theorem eval_e_correct :
   forall
     (e : uexpr)
     (fuel : nat)
+    (n : uexpr_env)
     (v : uexpr_val),
-    eval_e fuel e = Some v -> exists (n2 : uexpr_env), uexpr_eval nil e n2 v
+    eval_e fuel e = Some (n, v) -> uexpr_eval nil e n v
 .
 Proof.
   intros.
   unfold eval_e in H.
   destruct (my_eval fuel nil e).
-  - destruct s. destruct s. injection H as H. rewrite <- H. exists x. assumption.
+  - destruct s. destruct s. injection H as H. rewrite <- H. rewrite <- H0. assumption.
   - discriminate H.
 Qed.
 
