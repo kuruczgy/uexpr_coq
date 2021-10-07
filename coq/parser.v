@@ -29,7 +29,8 @@ Definition isIdentChar (c : ascii) : bool :=
   let n := nat_of_ascii c in
   ((48 <=? n) && (n <=? 57)) ||
   ((65 <=? n) && (n <=? 90)) ||
-  ((97 <=? n) && (n <=? 122)).
+  ((97 <=? n) && (n <=? 122)) ||
+  (95 =? n) || (45 =? n).
 
 Definition string_includes (s : string) (c : ascii) : bool :=
   if find (Ascii.eqb c) (list_ascii_of_string s) then true else false.
