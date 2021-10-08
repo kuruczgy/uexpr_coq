@@ -53,6 +53,14 @@ Inductive uexpr_eval : uexpr_env -> uexpr -> uexpr_env -> uexpr_val -> Prop :=
   (H_head : uexpr_eval n_head_1 e_head n_head_2 v_head)
   (H_tail : uexpr_eval n_head_2 (e_block (e_tail_h :: e_tail_t)) n_tail_2 v_tail)
   : uexpr_eval n_head_1 (e_block (e_head :: e_tail_h :: e_tail_t)) n_tail_2 v_tail
+| eval_call
+  (n_1 n_2 : uexpr_env)
+  (var : string)
+  (e : uexpr)
+  (v : uexpr_val)
+  (H_eval : uexpr_eval n_1 e n_2 v)
+  (H_get : str_map_get _ n_1 var v_error = v_fn e)
+   : uexpr_eval n_1 (e_call var []) n_2 v
 | eval_var
   (var : string)
   (n : uexpr_env)
@@ -77,6 +85,11 @@ Inductive uexpr_eval : uexpr_env -> uexpr -> uexpr_env -> uexpr_val -> Prop :=
   (v : uexpr_val)
   (H : uexpr_eval n1 e n2 v)
   : uexpr_eval n1 (e_call "let" [e_var var; e]) ((var, v) :: n2) (v_void)
+| eval_let_fn
+  (n : uexpr_env)
+  (var : string)
+  (e : uexpr)
+   : uexpr_eval n (e_call "let_fn" [e_var var; e]) ((var, v_fn e) :: n) (v_void)
 .
   
 Fixpoint my_eval (fuel : nat) (n1 : uexpr_env) (e : uexpr)
@@ -130,6 +143,24 @@ match e with
         )))
     | _ => None
     end
+| e_call "let_fn" [e_var var; e1] =>
+    Some (existT _ ((var, v_fn e1) :: n1) (existT _ v_void (
+      eval_let_fn n1 var e1
+    )))
+| e_call var [] =>
+    let get_res := str_map_get _ n1 var v_error in
+    let H_get : str_map_get _ n1 var v_error = get_res := eq_refl get_res in
+    (match get_res with
+    | v_fn e =>
+        fun H_get => match my_eval f n1 e with
+        | Some (existT _ n_2 (existT _ v H_eval)) =>
+            Some (existT _ n_2 (existT _ v (
+            eval_call n1 n_2 var e v H_eval H_get
+            )))
+        | _ => None
+        end
+    | _ => fun _ => None
+   end H_get)
 | _ => None
 end
 | O => None
