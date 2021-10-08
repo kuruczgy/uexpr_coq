@@ -91,8 +91,14 @@ Inductive uexpr_eval : uexpr_env -> uexpr -> uexpr_env -> uexpr_val -> Prop :=
   (e : uexpr)
    : uexpr_eval n (e_call "let_fn" [e_var var; e]) ((var, v_fn e) :: n) (v_void)
 .
-  
-Fixpoint my_eval (fuel : nat) (n1 : uexpr_env) (e : uexpr)
+
+Definition my_eval : forall
+  (fuel : nat)
+  (n1 : uexpr_env)
+  (e : uexpr),
+  option { n2 : uexpr_env & { v : uexpr_val & uexpr_eval n1 e n2 v } }.
+Proof.
+  refine (fix my_eval (fuel : nat) (n1 : uexpr_env) (e : uexpr)
   : option { n2 : uexpr_env & { v : uexpr_val & uexpr_eval n1 e n2 v } } :=
 match fuel with
 | S f =>
@@ -164,8 +170,8 @@ match e with
 | _ => None
 end
 | O => None
-end
-.
+end).
+Defined.
 
 Definition eval_e (fuel : nat) (e : uexpr) :=
   match my_eval fuel nil e with
