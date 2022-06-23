@@ -213,4 +213,25 @@ Definition eval (fuel : nat) (s : string) :=
   end
 .
 
-Compute (eval 100 "{x; y; z; ~(a=a); end;}").
+Definition eval_good (v_exp : uexpr_val) (e: string) :=
+  match eval 100 e with
+  | Some (n, v) => v = v_exp
+  | _ => False
+  end.
+
+Goal eval_good (v_string "a") "a". cbv. reflexivity. Qed.
+Goal eval_good (v_error) "~a". cbv. reflexivity. Qed.
+Goal eval_good (v_boolean false) "~(a=a)". cbv. reflexivity. Qed.
+
+Compute (eval 100 "
+{
+  let($b, a=a);
+  let_fn($flip, let($b, ~$b));
+  let_fn($rec, rec());
+  flip();
+  flip();
+  flip();
+  flip();
+  $b;
+}
+").
