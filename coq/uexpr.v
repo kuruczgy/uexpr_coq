@@ -65,12 +65,16 @@ Inductive uexpr_eval : uexpr_env -> uexpr -> uexpr_env -> uexpr_val -> Prop :=
   (var : string)
   (n : uexpr_env)
   : uexpr_eval n (e_var var) n (str_map_get _ n var v_error)
-| eval_neg_on_bool
+| eval_neg
   (n1 n2 : uexpr_env)
-  (b : bool)
+  (v : uexpr_val)
   (e : uexpr)
-  (H : uexpr_eval n1 e n2 (v_boolean b))
-  : uexpr_eval n1 (e_unop unop_neg e) n2 (v_boolean (negb b))
+  (H : uexpr_eval n1 e n2 v)
+  : uexpr_eval n1 (e_unop unop_neg e) n2 (
+    match v with
+    | v_boolean b => v_boolean (negb b)
+    | _ => v_error
+    end)
 | eval_eq_on_strings
   (n1 n2 n3 : uexpr_env)
   (s1 s2 : string)
@@ -127,9 +131,14 @@ match e with
     Some (existT _ n1 (existT _ (str_map_get _ n1 var v_error) (
       eval_var var n1
     )))
-| e_unop unop_neg e1 => match my_eval f n1 e1 with
-    | Some (existT _ n2 (existT _ (v_boolean b) pf)) =>
-      Some (existT _ n2 (existT _ (v_boolean (negb b)) (eval_neg_on_bool n1 n2 b e1 pf)))
+| e_unop unop_neg e1 =>
+    match my_eval f n1 e1 with
+    | Some (existT _ n2 (existT _ v pf)) =>
+      Some (existT _ n2 (existT _ (
+    match v with
+    | v_boolean b => v_boolean (negb b)
+    | _ => v_error
+    end) (eval_neg n1 n2 v e1 pf)))
     | _ => None
   end
 | e_binop binop_eq e1 e2 => match my_eval f n1 e1 with
